@@ -1,15 +1,15 @@
 #include <Arduino.h>
 #include <Servo.h>
 
+// ===== UART1 (PA10 RX, PA9 TX) =====
+HardwareSerial FlowSerial(PA10, PA9);  // RX, TX
+
 // ===== Servo =====
 Servo servoYaw;
 Servo servoPitch;
 
 #define SERVO_YAW_PIN   PA0
 #define SERVO_PITCH_PIN PA1
-
-// ===== Optical Flow UART =====
-#define FLOW_SERIAL Serial1   // USART1 (PA9, PA10)
 
 // ===== PID =====
 float Kp = 0.8;
@@ -33,8 +33,8 @@ void autoScan();
 
 void setup() {
 
-  Serial.begin(115200);
-  FLOW_SERIAL.begin(115200);
+  Serial.begin(115200);          // Debug USB
+  FlowSerial.begin(115200);      // Optical Flow UART
 
   servoYaw.attach(SERVO_YAW_PIN);
   servoPitch.attach(SERVO_PITCH_PIN);
@@ -47,9 +47,9 @@ void setup() {
 
 void loop() {
 
-  if (FLOW_SERIAL.available()) {
+  if (FlowSerial.available()) {
 
-    String data = FLOW_SERIAL.readStringUntil('\n');
+    String data = FlowSerial.readStringUntil('\n');
 
     int dx = 0, dy = 0;
 
@@ -68,7 +68,7 @@ void loop() {
         lastErrorX = errorX;
 
         int servoX = 90 + outputX;
-        servoX = constrain(servoX, 80, 100);
+        servoX = constrain(servoX, 60, 120);
         servoYaw.write(servoX);
 
         // ===== PID Y =====
@@ -79,12 +79,18 @@ void loop() {
         lastErrorY = errorY;
 
         int servoY = 90 + outputY;
-        servoY = constrain(servoY, 80, 100);
+        servoY = constrain(servoY, 60, 120);
         servoPitch.write(servoY);
+
+        Serial.print("DX: ");
+        Serial.print(dx);
+        Serial.print("  DY: ");
+        Serial.println(dy);
       }
     }
   }
 
+  // Mất mục tiêu sau 2 giây
   if (millis() - lastDetectTime > 2000) {
     lockMode = false;
   }
@@ -96,14 +102,14 @@ void loop() {
 
 void autoScan() {
 
-  if (millis() - lastScanMove > 600) {
+  if (millis() - lastScanMove > 800) {
 
     lastScanMove = millis();
 
     if (scanDir == 1) {
-      servoYaw.write(100);
+      servoYaw.write(120);
     } else {
-      servoYaw.write(80);
+      servoYaw.write(60);
     }
 
     delay(200);

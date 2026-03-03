@@ -1,19 +1,17 @@
 #include <Arduino.h>
-#include <ESP32Servo.h>
+#include <Servo.h>
 
 // ===== Servo =====
 Servo servoYaw;
 Servo servoPitch;
 
-#define SERVO_YAW_PIN    18
-#define SERVO_PITCH_PIN  19
+#define SERVO_YAW_PIN   PA0
+#define SERVO_PITCH_PIN PA1
 
 // ===== Optical Flow UART =====
-HardwareSerial OFSerial(2);
-#define RXD2 16
-#define TXD2 17
+#define FLOW_SERIAL Serial1   // USART1 (PA9, PA10)
 
-// ===== PID Parameters =====
+// ===== PID =====
 float Kp = 0.8;
 float Ki = 0.02;
 float Kd = 0.4;
@@ -23,11 +21,11 @@ float errorY = 0, lastErrorY = 0, integralY = 0;
 
 int deadzone = 3;
 
-// ===== Lock State =====
+// ===== Lock state =====
 unsigned long lastDetectTime = 0;
 bool lockMode = false;
 
-// ===== Auto Scan =====
+// ===== Scan =====
 int scanDir = 1;
 unsigned long lastScanMove = 0;
 
@@ -36,8 +34,7 @@ void autoScan();
 void setup() {
 
   Serial.begin(115200);
-
-  OFSerial.begin(115200, SERIAL_8N1, RXD2, TXD2);
+  FLOW_SERIAL.begin(115200);
 
   servoYaw.attach(SERVO_YAW_PIN);
   servoPitch.attach(SERVO_PITCH_PIN);
@@ -45,15 +42,14 @@ void setup() {
   servoYaw.write(90);
   servoPitch.write(90);
 
-  Serial.println("Target Lock System Ready");
+  Serial.println("STM32 Target Lock Ready");
 }
 
 void loop() {
 
-  // ===== Read Optical Flow =====
-  if (OFSerial.available()) {
+  if (FLOW_SERIAL.available()) {
 
-    String data = OFSerial.readStringUntil('\n');
+    String data = FLOW_SERIAL.readStringUntil('\n');
 
     int dx = 0, dy = 0;
 
@@ -68,39 +64,36 @@ void loop() {
         errorX = dx;
         integralX += errorX;
         float derivativeX = errorX - lastErrorX;
-        float outputX = Kp * errorX + Ki * integralX + Kd * derivativeX;
+        float outputX = Kp*errorX + Ki*integralX + Kd*derivativeX;
         lastErrorX = errorX;
 
         int servoX = 90 + outputX;
-        servoX = constrain(servoX, 75, 105);
+        servoX = constrain(servoX, 80, 100);
         servoYaw.write(servoX);
 
         // ===== PID Y =====
         errorY = dy;
         integralY += errorY;
         float derivativeY = errorY - lastErrorY;
-        float outputY = Kp * errorY + Ki * integralY + Kd * derivativeY;
+        float outputY = Kp*errorY + Ki*integralY + Kd*derivativeY;
         lastErrorY = errorY;
 
         int servoY = 90 + outputY;
-        servoY = constrain(servoY, 75, 105);
+        servoY = constrain(servoY, 80, 100);
         servoPitch.write(servoY);
       }
     }
   }
 
-  // ===== Nếu mất mục tiêu > 2 giây =====
   if (millis() - lastDetectTime > 2000) {
     lockMode = false;
   }
 
-  // ===== Auto Scan Mode =====
   if (!lockMode) {
     autoScan();
   }
 }
 
-// ===== Auto Scan Function =====
 void autoScan() {
 
   if (millis() - lastScanMove > 600) {
@@ -108,13 +101,13 @@ void autoScan() {
     lastScanMove = millis();
 
     if (scanDir == 1) {
-      servoYaw.write(105);   // quay phải
+      servoYaw.write(100);
     } else {
-      servoYaw.write(75);    // quay trái
+      servoYaw.write(80);
     }
 
     delay(200);
-    servoYaw.write(90);      // dừng
+    servoYaw.write(90);
 
     scanDir *= -1;
   }

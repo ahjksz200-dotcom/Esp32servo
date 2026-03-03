@@ -1,104 +1,121 @@
+#include <Arduino.h>
 #include <ESP32Servo.h>
 
+// ===== Servo =====
 Servo servoYaw;
 Servo servoPitch;
 
-#define SERVO_YAW_PIN 18
-#define SERVO_PITCH_PIN 19
+#define SERVO_YAW_PIN    18
+#define SERVO_PITCH_PIN  19
 
+// ===== Optical Flow UART =====
 HardwareSerial OFSerial(2);
+#define RXD2 16
+#define TXD2 17
 
-// ===== PID thông số =====
+// ===== PID Parameters =====
 float Kp = 0.8;
-float Ki = 0.01;
+float Ki = 0.02;
 float Kd = 0.4;
 
-float errorX, lastErrorX = 0, integralX = 0;
-float errorY, lastErrorY = 0, integralY = 0;
+float errorX = 0, lastErrorX = 0, integralX = 0;
+float errorY = 0, lastErrorY = 0, integralY = 0;
 
 int deadzone = 3;
 
+// ===== Lock State =====
 unsigned long lastDetectTime = 0;
 bool lockMode = false;
 
+// ===== Auto Scan =====
 int scanDir = 1;
+unsigned long lastScanMove = 0;
+
+void autoScan();
 
 void setup() {
+
   Serial.begin(115200);
-  OFSerial.begin(115200, SERIAL_8N1, 16, 17);
+
+  OFSerial.begin(115200, SERIAL_8N1, RXD2, TXD2);
 
   servoYaw.attach(SERVO_YAW_PIN);
   servoPitch.attach(SERVO_PITCH_PIN);
 
   servoYaw.write(90);
   servoPitch.write(90);
+
+  Serial.println("Target Lock System Ready");
 }
 
 void loop() {
 
+  // ===== Read Optical Flow =====
   if (OFSerial.available()) {
 
     String data = OFSerial.readStringUntil('\n');
 
     int dx = 0, dy = 0;
-    sscanf(data.c_str(), "DX:%d,DY:%d", &dx, &dy);
 
-    if (abs(dx) > deadzone || abs(dy) > deadzone) {
-      lockMode = true;
-      lastDetectTime = millis();
+    if (sscanf(data.c_str(), "DX:%d,DY:%d", &dx, &dy) == 2) {
 
-      // ===== PID X =====
-      errorX = dx;
-      integralX += errorX;
-      float derivativeX = errorX - lastErrorX;
-      float outputX = Kp*errorX + Ki*integralX + Kd*derivativeX;
-      lastErrorX = errorX;
+      if (abs(dx) > deadzone || abs(dy) > deadzone) {
 
-      int servoX = 90 + outputX;
-      servoX = constrain(servoX, 70, 110);
-      servoYaw.write(servoX);
+        lockMode = true;
+        lastDetectTime = millis();
 
-      // ===== PID Y =====
-      errorY = dy;
-      integralY += errorY;
-      float derivativeY = errorY - lastErrorY;
-      float outputY = Kp*errorY + Ki*integralY + Kd*derivativeY;
-      lastErrorY = errorY;
+        // ===== PID X =====
+        errorX = dx;
+        integralX += errorX;
+        float derivativeX = errorX - lastErrorX;
+        float outputX = Kp * errorX + Ki * integralX + Kd * derivativeX;
+        lastErrorX = errorX;
 
-      int servoY = 90 + outputY;
-      servoY = constrain(servoY, 70, 110);
-      servoPitch.write(servoY);
+        int servoX = 90 + outputX;
+        servoX = constrain(servoX, 75, 105);
+        servoYaw.write(servoX);
+
+        // ===== PID Y =====
+        errorY = dy;
+        integralY += errorY;
+        float derivativeY = errorY - lastErrorY;
+        float outputY = Kp * errorY + Ki * integralY + Kd * derivativeY;
+        lastErrorY = errorY;
+
+        int servoY = 90 + outputY;
+        servoY = constrain(servoY, 75, 105);
+        servoPitch.write(servoY);
+      }
     }
   }
 
-  // ===== Nếu mất mục tiêu 2 giây → Auto Scan =====
+  // ===== Nếu mất mục tiêu > 2 giây =====
   if (millis() - lastDetectTime > 2000) {
     lockMode = false;
   }
 
+  // ===== Auto Scan Mode =====
   if (!lockMode) {
     autoScan();
   }
 }
 
-// ===== Auto Scan =====
+// ===== Auto Scan Function =====
 void autoScan() {
 
-  static unsigned long lastMove = 0;
+  if (millis() - lastScanMove > 600) {
 
-  if (millis() - lastMove > 50) {
-    lastMove = millis();
-
-    servoYaw.write(90 + scanDir * 15);
+    lastScanMove = millis();
 
     if (scanDir == 1) {
-      delay(400);
-      scanDir = -1;
+      servoYaw.write(105);   // quay phải
     } else {
-      delay(400);
-      scanDir = 1;
+      servoYaw.write(75);    // quay trái
     }
 
-    servoYaw.write(90);
+    delay(200);
+    servoYaw.write(90);      // dừng
+
+    scanDir *= -1;
   }
 }
